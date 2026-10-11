@@ -1,4 +1,4 @@
-name: Build N60 Pro OpenWrt
+name: Build N60 Pro Official OpenWrt 25.12
 
 on:
   workflow_dispatch:
@@ -21,11 +21,13 @@ jobs:
             git libelf-dev libncurses-dev libssl-dev python3 python3-setuptools \
             rsync swig unzip zlib1g-dev file wget
 
-      - name: Checkout official OpenWrt
+      - name: Checkout official OpenWrt 25.12
         run: git clone --depth 1 --branch openwrt-25.12 https://github.com/openwrt/openwrt.git openwrt
 
-      - name: Add OpenClash
-        run: git clone --depth 1 https://github.com/vernesong/OpenClash.git openwrt/package/luci-app-openclash
+      - name: Add OpenClash and Argon theme
+        run: |
+          git clone --depth 1 https://github.com/vernesong/OpenClash.git openwrt/package/luci-app-openclash
+          git clone --depth 1 https://github.com/jerrykuku/luci-theme-argon.git openwrt/package/luci-theme-argon
 
       - name: Configure N60 Pro
         working-directory: openwrt
@@ -39,6 +41,10 @@ jobs:
           CONFIG_TARGET_mediatek_filogic_DEVICE_netcore_n60-pro=y
           CONFIG_PACKAGE_luci=y
           CONFIG_PACKAGE_luci-ssl=y
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-firewall-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-wireguard-zh-cn=y
+          CONFIG_PACKAGE_luci-theme-argon=y
           CONFIG_PACKAGE_luci-app-openclash=y
           CONFIG_PACKAGE_luci-compat=y
           CONFIG_PACKAGE_bash=y
@@ -49,8 +55,43 @@ jobs:
           CONFIG_PACKAGE_wireguard-tools=y
           CONFIG_PACKAGE_kmod-wireguard=y
           CONFIG_PACKAGE_luci-proto-wireguard=y
+          CONFIG_PACKAGE_kmod-usb3=y
+          CONFIG_PACKAGE_kmod-usb-storage=y
+          CONFIG_PACKAGE_block-mount=y
+          CONFIG_PACKAGE_kmod-fs-ext4=y
+          CONFIG_PACKAGE_kmod-fs-vfat=y
+          CONFIG_PACKAGE_kmod-nls-cp437=y
+          CONFIG_PACKAGE_kmod-nls-iso8859-1=y
+          CONFIG_PACKAGE_kmod-nls-utf8=y
+          CONFIG_PACKAGE_usbutils=y
+          CONFIG_PACKAGE_e2fsprogs=y
+          CONFIG_PACKAGE_dosfstools=y
           EOF
           make defconfig
+          mkdir -p files/etc/uci-defaults
+          cat > files/etc/uci-defaults/99-personal-settings <<'EOF'
+          #!/bin/sh
+          uci set network.wan.ipv6='0'
+          uci -q delete network.wan6
+          uci -q delete network.lan.ip6assign
+          uci -q delete network.lan.ip6hint
+          uci -q delete network.lan.ip6class
+          uci set network.lan.delegate='0'
+          uci set dhcp.lan.ra='disabled'
+          uci set dhcp.lan.dhcpv6='disabled'
+          uci set dhcp.lan.ndp='disabled'
+          uci set dhcp.@dnsmasq[0].filter_aaaa='1'
+          uci set luci.main.lang='zh_cn'
+          uci set luci.main.mediaurlbase='/luci-static/argon'
+          uci commit network
+          uci commit dhcp
+          uci commit luci
+          if [ -x /etc/init.d/odhcpd ]; then
+            /etc/init.d/odhcpd disable
+            /etc/init.d/odhcpd stop
+          fi
+          exit 0
+          EOF
 
       - name: Download sources and build firmware
         working-directory: openwrt
@@ -61,7 +102,7 @@ jobs:
       - name: Upload N60 Pro sysupgrade image
         uses: actions/upload-artifact@v4
         with:
-          name: n60pro-openwrt-openclash-wireguard
+          name: n60pro-official-openwrt-openclash-wireguard-usb
           path: openwrt/bin/targets/mediatek/filogic/*netcore_n60-pro*sysupgrade.itb
           if-no-files-found: error
           retention-days: 7
